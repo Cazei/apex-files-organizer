@@ -1,6 +1,8 @@
 const path = require("path");
 const fs = require("fs");
 
+const COMMONS_DOMAIN = 'commons';
+
 const classTypes = [
     "Service",
     "TriggerHandler",
@@ -107,21 +109,22 @@ function parse(file) {
 
     if (pureFileName.includes("_")) {
         let parts = pureFileName.split("_");
-        let domain = parts[0];
         let lastPart = parts[parts.length - 1];
 
+
+        let domain = parts[0];
+        console.log('Parts: ', parts);
+
         if (
-            (lastPart.toLowerCase() == "test" ||
-                lastPart.toLowerCase() == "tests") &&
+            hasUnderscoreTestInName(pureFileName) &&
             parts.length == 2
         ) {
-            fileDetails.ignorePrefix = true;
-            fileDetails.isTest = true;
+            fileDetails.domain = COMMONS_DOMAIN;
         } else {
             fileDetails.domain = domain;
         }
     }else {
-        fileDetails.domain = 'Other';
+        fileDetails.domain = COMMONS_DOMAIN;
     }
     return fileDetails;
 }
