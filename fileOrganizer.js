@@ -1,5 +1,6 @@
 const path = require("path");
 const fs = require("fs");
+const { setHeapSnapshotNearHeapLimit } = require("v8");
 
 const COMMONS_DOMAIN = 'commons';
 
@@ -27,17 +28,51 @@ const classTypeMapping = new Map([
 
 const testClasses = [];
 
-const pathParam = process.argv.indexOf('--path');
+const args = process.argv;
+const pathParam = args.indexOf('--path');
 let classPathInput;
 
-if(pathParam > -1 ){
-    classPathInput = process.argv[pathParam +1];
+const namespaceParam = args.indexOf('--specificNamespace');
+let specificNamespaceName;
+const targetNamespaceParam = args.indexOf('--targetNamespace')
+let targetNamespace;
+
+function validations(){
+
+    if(pathParam > -1 )
+    {   
+        classPathInput = args[pathParam +1];
+        if(!classPathInput){
+            throw new Error(`--path requires a path to classes!`);
+        }
+    }
+    
+    if(namespaceParam > -1){
+        specificNamespaceName = args[namespaceParam +1];
+        if(!specificNamespaceName){
+            throw new Error(`--specificNamespace requires a namespace to be given!`);
+        }
+    
+
+        if(targetNamespaceParam == -1){
+            throw new Error('--targetNamespace has to be supplied when --specifiNamespace is used.');
+        }
+    }
+    
+    if(targetNamespaceParam > -1){
+        targetNamespace = args[targetNamespaceParam +1];
+        if(!targetNamespace){
+            throw new Error('--targetNamespace has no value!')
+        }
+    }
 }
 
 function reorganizeFiles(classPath = "force-app/main/default/classes") {
-    console.log(classPath);
+
+    validations();
+
     if (!fs.existsSync(classPath)) {
-        throw new Error(`Path ${classPath} does not exist!`);
+        throw new Error(`Cannot find Path ${classPath}! Make sure youre running the script form a SFDX project!`);
     }
 
     let files = fs.readdirSync(classPath).map((file) => `${classPath}/${file}`);
@@ -53,13 +88,19 @@ function reorganizeFiles(classPath = "force-app/main/default/classes") {
 
 function moveFiles(files){
     for(file of files){
-        fs.renameSync(file.originalLocation, `${file.newLocation}/${file.fileName}`);
+        if(file.shouldMove){
+            fs.renameSync(file.originalLocation, `${file.newLocation}/${file.fileName}`);
+        }
     }
 }
 
 function prepareFinalFileLocations(fileDetails, classPath) {
     for (fileDetail of fileDetails) {
         let classTypeFolder = classTypeMapping.get(fileDetail.classType);
+
+        if(!fileDetail.shouldMove){
+            continue;
+        }
 
         if (!fileDetail.classType) {
             if (fileDetail.isTest) {
@@ -75,7 +116,6 @@ function prepareFinalFileLocations(fileDetails, classPath) {
             }
         }
         fileDetail.newLocation = fileDetail.newLocation.replace('//','/');
-        console.log(fileDetail);
         createIfDoesntExist(fileDetail.newLocation);
     }
 }
@@ -98,6 +138,7 @@ function parse(file) {
         classType: "",
         isTest: isTestClass(parsedFile),
         originalLocation: file,
+        shouldMove: true
     };
 
     const regex = new RegExp(`(?:${classTypes.join("|")})`, "g");
@@ -107,26 +148,39 @@ function parse(file) {
         fileDetails.classType = matchArray[matchArray.length - 1][0];
     }
 
-    if (pureFileName.includes("_")) {
-        let parts = pureFileName.split("_");
-        let lastPart = parts[parts.length - 1];
-
-
-        let domain = parts[0];
-        console.log('Parts: ', parts);
-
-        if (
-            hasUnderscoreTestInName(pureFileName) &&
-            parts.length == 2
-        ) {
-            fileDetails.domain = COMMONS_DOMAIN;
-        } else {
-            fileDetails.domain = domain;
+    if(shouldOnlyMoveSpecificNamespaces()){
+        if(pureFileName.substring(0,specificNamespaceName.length) === specificNamespaceName){
+            fileDetails.domain = targetNamespace;
+        }else{
+            fileDetails.shouldMove = false;
         }
-    }else {
-        fileDetails.domain = COMMONS_DOMAIN;
+    }else{
+        if (pureFileName.includes("_")) {
+            let parts = pureFileName.split("_");    
+            let domain = parts[0];
+
+            if (
+                filenameWithUnderscoreTest(pureFileName) &&
+                parts.length == 2
+            ) {
+                fileDetails.domain = COMMONS_DOMAIN;
+            } else {
+                fileDetails.domain = domain;
+            }
+        }else {
+            fileDetails.domain = COMMONS_DOMAIN;
+        }
     }
     return fileDetails;
+}
+
+
+function shouldOnlyMoveSpecificNamespaces(){
+    return specificNamespaceName !== undefined;
+}
+
+function filenameWithUnderscoreTest(filename){
+    return filename.toLowerCase().includes('_test') || filename.toLowerCase().includes('_tests'); 
 }
 
 function removeExtensions(fileName) {
