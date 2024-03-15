@@ -1,6 +1,5 @@
 const path = require("path");
 const fs = require("fs");
-const { setHeapSnapshotNearHeapLimit } = require("v8");
 
 const COMMONS_DOMAIN = 'commons';
 
